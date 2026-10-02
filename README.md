@@ -15,16 +15,66 @@ Collect timestamped market/news events and later market observations as immutabl
 - Derived validation must reference the underlying event/reaction evidence.
 - No database, dashboard, ML, API, or LINE in the first experiment.
 
-## Minimal flow
+---
 
-source event -> immutable event commit -> wait -> market observation -> reaction commit -> optional validation.
+## Evidence Model
 
-## Proposed layout
+### Event
+An event is information observed from a source.
+- Stored at: `events/YYYY-MM-DD/<event_id>.json`
+- Deterministic Identity: SHA-256 over `source`, `published_at`, `ticker`, `title`, `content_hash` (`evt_<16_hex>`).
 
-- `events/` — source events
-- `reactions/` — observed market state/reaction
-- `validations/` — derived measurements
-- `.github/workflows/` — workers
-- `scripts/` — small deterministic collectors/processors
+### Reaction
+A reaction records market state observed after the event.
+- Stored at: `reactions/YYYY-MM-DD/<reaction_id>.json`
+- Deterministic Identity: SHA-256 over `event_id`, `window`, `observed_at`, `ticker` (`rxn_<16_hex>`).
 
-This repository is an experiment workspace only; `.tmp` is intentionally used for scratch/repo prototyping.
+> **Note:** Market values in this offline prototype are **synthetic**. Never present synthetic values as real market observations.
+
+---
+
+## Local Setup & Commands
+
+### Prerequisites
+- Python 3.10+
+
+### Installation
+```bash
+python -m venv .venv
+# Activate virtual environment (Windows PowerShell):
+.\.venv\Scripts\Activate.ps1
+# Or on Linux/macOS:
+# source .venv/bin/activate
+
+pip install .[dev]
+```
+
+### Running Tests
+```bash
+pytest -v
+```
+
+### Running the Sample Pipeline
+```bash
+python -m scripts.pipeline --sample
+```
+
+### Verifying Append-Only Idempotency
+```bash
+python -m scripts.pipeline --sample
+git status --porcelain
+# Run again:
+python -m scripts.pipeline --sample
+git status --porcelain  # Must show no uncommitted changes / modified files on replay
+```
+
+---
+
+## Explicitly Not Implemented (Non-Goals)
+
+- Real broker / live news ingestion
+- Database storage (SQL, NoSQL, SQLite)
+- API / web server / dashboard / UI
+- Machine learning models or prediction scoring
+- Scheduled production workers or broker ranking
+- LINE integration or commercial redistribution of third-party data
