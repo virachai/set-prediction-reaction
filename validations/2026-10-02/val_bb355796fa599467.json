@@ -1,0 +1,18 @@
+{
+    "data_status": "synthetic",
+    "event_id": "evt_7f1f061b6dda8f42",
+    "metrics": {
+        "benchmark_symbol": "SET",
+        "benchmark_value": 1420.5,
+        "elapsed_seconds": 900,
+        "observed_price": 25.1,
+        "observed_volume": 1500000
+    },
+    "reaction_id": "rxn_0f8b9325ac4ba0a1",
+    "schema_version": 1,
+    "ticker": "PTT",
+    "validated_at": "2026-10-02T09:15:05+07:00",
+    "validation_id": "val_bb355796fa599467",
+    "validation_type": "reaction_metrics",
+    "window": "15m"
+}
