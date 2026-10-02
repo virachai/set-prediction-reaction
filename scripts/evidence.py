@@ -76,29 +76,54 @@ def compute_reaction_id(reaction_dict: Dict[str, Any]) -> str:
     return f"rxn_{digest[:16]}"
 
 
+def compute_validation_id(validation_dict: Dict[str, Any]) -> str:
+    """
+    Computes deterministic SHA-256 validation ID over stable fields:
+    event_id, reaction_id, window, validation_type.
+    Format: 'val_' + first 16 hex characters.
+    """
+    stable_fields = {
+        "event_id": validation_dict.get("event_id"),
+        "reaction_id": validation_dict.get("reaction_id"),
+        "window": validation_dict.get("window"),
+        "validation_type": validation_dict.get("validation_type"),
+    }
+    digest = hashlib.sha256(canonical_json_bytes(stable_fields)).hexdigest()
+    return f"val_{digest[:16]}"
+
+
 def append_evidence(record: Dict[str, Any], evidence_type: str, base_dir: Path = Path(".")) -> Path:
     """
     Appends an evidence record in an append-only, idempotent manner.
-    evidence_type: 'events' or 'reactions'.
+    evidence_type: 'events', 'reactions', or 'validations'.
     Rules:
     1. Computes deterministic target path based on date partition and record ID.
     2. If file does not exist, writes atomically.
     3. If file exists with identical canonical content, returns path (idempotent no-op).
     4. If file exists with conflicting content, raises FileExistsError (fails loudly).
     """
-    if evidence_type not in ("events", "reactions"):
-        raise ValueError(f"Invalid evidence_type: {evidence_type}. Must be 'events' or 'reactions'.")
+    if evidence_type not in ("events", "reactions", "validations"):
+        raise ValueError(
+            f"Invalid evidence_type: {evidence_type}. Must be 'events', 'reactions', or 'validations'."
+        )
     
     if evidence_type == "events":
         record_id = record.get("event_id")
         dt_str = record.get("published_at")
-    else:
+    elif evidence_type == "reactions":
         record_id = record.get("reaction_id")
         dt_str = record.get("observed_at")
         
         # Verify event_id linkage exists
         if not record.get("event_id"):
             raise ValueError("Reaction record must reference an 'event_id'.")
+    else:  # validations
+        record_id = record.get("validation_id")
+        dt_str = record.get("validated_at")
+        
+        # Verify both event_id and reaction_id linkage exist
+        if not record.get("event_id") or not record.get("reaction_id"):
+            raise ValueError("Validation record must reference both 'event_id' and 'reaction_id'.")
 
     if not record_id:
         raise ValueError(f"Record is missing required identifier for type {evidence_type}.")
@@ -186,3 +211,42 @@ def create_sample_reaction(event_id: str) -> Dict[str, Any]:
     reaction_id = compute_reaction_id(partial)
     reaction_record = {"reaction_id": reaction_id, **partial}
     return reaction_record
+
+
+def create_sample_validation(event: Dict[str, Any], reaction: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Creates a deterministic synthetic validation record comparing event and reaction observations.
+    """
+    if reaction.get("event_id") != event.get("event_id"):
+        raise ValueError(
+            f"Reaction event_id '{reaction.get('event_id')}' does not match Event id '{event.get('event_id')}'"
+        )
+    
+    validated_at = "2026-10-02T09:15:05+07:00"
+    window = reaction.get("window", "15m")
+    validation_type = "reaction_metrics"
+    
+    event_dt = validate_iso8601_tz(event["published_at"])
+    rxn_dt = validate_iso8601_tz(reaction["observed_at"])
+    elapsed_seconds = int((rxn_dt - event_dt).total_seconds())
+    
+    partial = {
+        "event_id": event["event_id"],
+        "reaction_id": reaction["reaction_id"],
+        "ticker": event.get("ticker"),
+        "window": window,
+        "validation_type": validation_type,
+        "validated_at": validated_at,
+        "metrics": {
+            "observed_price": reaction.get("price"),
+            "observed_volume": reaction.get("volume"),
+            "benchmark_symbol": reaction.get("benchmark", {}).get("symbol") if reaction.get("benchmark") else None,
+            "benchmark_value": reaction.get("benchmark", {}).get("value") if reaction.get("benchmark") else None,
+            "elapsed_seconds": elapsed_seconds,
+        },
+        "schema_version": 1,
+        "data_status": reaction.get("data_status", "synthetic"),
+    }
+    validation_id = compute_validation_id(partial)
+    return {"validation_id": validation_id, **partial}
+

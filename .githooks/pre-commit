@@ -1,0 +1,62 @@
+#!/bin/sh
+# Pre-commit hook for set-prediction-reaction
+# Enforces:
+# 1. Pytest suite pass rate
+# 2. Append-only pipeline replay idempotency
+# 3. Secret and sensitive file prevention
+#
+# Enable with: git config core.hooksPath .githooks
+
+set -e
+
+# Detect Python / uv execution environment
+if command -v uv >/dev/null 2>&1; then
+    PY="uv run python"
+    PYTEST="uv run pytest"
+elif [ -f ".venv/Scripts/python.exe" ]; then
+    PY=".venv/Scripts/python.exe"
+    PYTEST=".venv/Scripts/pytest.exe"
+elif [ -f ".venv/bin/python" ]; then
+    PY=".venv/bin/python"
+    PYTEST=".venv/bin/pytest"
+else
+    PY="python"
+    PYTEST="pytest"
+fi
+
+echo "=========================================================="
+echo " [pre-commit] Validating set-prediction-reaction invariants"
+echo "=========================================================="
+
+echo "[1/3] Running Pytest suite..."
+$PYTEST -v || {
+    echo "[!] Pre-commit error: Pytest suite failed." >&2
+    exit 1
+}
+
+echo "[2/3] Verifying offline pipeline replay idempotency..."
+# First run ensures state is populated
+$PY -m scripts.pipeline --sample >/dev/null 2>&1
+
+TMP_BEFORE=$(mktemp)
+TMP_AFTER=$(mktemp)
+git status --porcelain > "$TMP_BEFORE"
+
+# Second run must produce zero diffs
+$PY -m scripts.pipeline --sample >/dev/null 2>&1
+git status --porcelain > "$TMP_AFTER"
+
+if ! diff "$TMP_BEFORE" "$TMP_AFTER" >/dev/null 2>&1; then
+    echo "[!] Pre-commit error: Pipeline replay is NOT idempotent. Evidence was rewritten!" >&2
+    rm -f "$TMP_BEFORE" "$TMP_AFTER"
+    exit 1
+fi
+rm -f "$TMP_BEFORE" "$TMP_AFTER"
+
+echo "[3/3] Checking for forbidden secrets or environment files..."
+if git diff --cached --name-only | grep -E '(\.env|secret|credentials|\.pem|\.key)$' >/dev/null 2>&1; then
+    echo "[!] Pre-commit error: Attempting to commit forbidden secret or .env file." >&2
+    exit 1
+fi
+
+echo "[✓] All pre-commit invariant checks passed."

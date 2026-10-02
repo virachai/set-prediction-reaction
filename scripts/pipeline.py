@@ -11,6 +11,7 @@ from pathlib import Path
 from scripts.evidence import (
     create_sample_event,
     create_sample_reaction,
+    create_sample_validation,
     append_evidence,
 )
 
@@ -31,6 +32,11 @@ def run_pipeline(sample: bool = True) -> None:
     reaction = create_sample_reaction(event["event_id"])
     reaction_path = append_evidence(reaction, "reactions")
     print(f"[+] Reaction evidence written: {reaction_path} (ID: {reaction['reaction_id']}, Event ID: {event['event_id']})")
+    
+    # 3. Create and write validation evidence linked to event and reaction
+    validation = create_sample_validation(event, reaction)
+    validation_path = append_evidence(validation, "validations")
+    print(f"[+] Validation evidence written: {validation_path} (ID: {validation['validation_id']})")
     
     print("Pipeline execution completed successfully.")
 
